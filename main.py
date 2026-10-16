@@ -11,7 +11,6 @@ app = FastAPI()
 
 API_BASE = "https://exam.sanand.workers.dev/questionData?email=22f2000901%40ds.study.iitm.ac.in&quizSign=SDjaPcG3ZnarUrzUDzCzJewltMiS718GRDkDguC8476R7LgQjmNnDH3W2JvPzsUl0%2F812fT7dWWAGZR6tXQX9coerwL7yWUbwiUQuanxaz%2F3SHgNnAF4XonVA%2FE5xOyTuOtfOAdgxdppPXLuTLIzRI7k1Kh8o4s6Ss5yYY0wOgaDlw%2BqZH0bTZ3QUohERul61kO%2FNZnEwV901dE1fMWdfPwunG1goBzBlZuhUsR8Q%2B%2FF1aqJNKsPGHF2C0h7GimDYnT28iNawW0oOMcqcebWXUXD5f3dP8KEMW5BieJR%2BCLQRZ49FfuKHVmCy0S5ccAScSjWBWHPIlCBpFBqBfJsEw%3D%3D&questionId=q-ledger-agent-server"
 
-# Ensure base_url has proper protocol fallback
 base_url = os.environ.get("OPENAI_BASE_URL", "https://aipipe.org/openai/v1")
 if not base_url.startswith("http://") and not base_url.startswith("https://"):
     base_url = "https://" + base_url
@@ -113,21 +112,13 @@ class QueryRequest(BaseModel):
 def answer_question(req: QueryRequest):
     try:
         schema_df = pd.read_sql("SELECT sql FROM sqlite_master WHERE type='table';", db_conn)
-        schema_info = "\n".join(schema_df['sql'].tolist()) if not schema_df.empty else "No tables found."
-
-        sample_orders = pd.read_sql("SELECT * FROM orders LIMIT 3;", db_conn).to_string() if "orders" in pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", db_conn)['name'].values else ""
-        sample_rates = pd.read_sql("SELECT * FROM rates LIMIT 3;", db_conn).to_string() if "rates" in pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", db_conn)['name'].values else ""
+        # Safely convert all schema entries to string to prevent TypeError
+        schema_info = "\n".join([str(x) for x in schema_df['sql'].dropna().tolist()]) if not schema_df.empty else "No tables found."
 
         prompt = f"""
 You are an expert SQL analyst for Acme Appliances order ledger.
 Database Schema:
 {schema_info}
-
-Sample Orders:
-{sample_orders}
-
-Sample Rates:
-{sample_rates}
 
 Rules & Context:
 - Business dates use Asia/Kolkata timezone.
@@ -160,7 +151,7 @@ Return ONLY the SQL query inside a markdown code block (e.g. ```sql ... ```). No
         result_df = pd.read_sql(sql_query, db_conn)
         
         if result_df.empty:
-            answer = "0"
+            answer = 0
         elif len(result_df) == 1 and len(result_df.columns) == 1:
             val = result_df.iloc[0, 0]
             if isinstance(val, float):
