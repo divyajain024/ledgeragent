@@ -13,30 +13,53 @@ API_BASE = "https://exam.sanand.workers.dev/questionData?email=22f2000901%40ds.s
 
 # AI Pipe configuration (OpenAI compatible)
 client = OpenAI(
-    api_key=os.environ.get("OPENAI_API_KEY"), # Put your aipipe.org token here in Render
+    api_key=os.environ.get("OPENAI_API_KEY"),
     base_url=os.environ.get("OPENAI_BASE_URL", "https://aipipe.org/openai/v1")
 )
 
 def load_data_into_db():
-    base_res = requests.get(f"{API_BASE}&path=/").json()
-    orders_url = base_res["links"]["orders"]
-    rates_url = base_res["links"]["rates"]
+    try:
+        base_res = requests.get(f"{API_BASE}&path=/").json()
+        orders_url = base_res["links"]["orders"]
+        rates_url = base_res["links"]["rates"]
 
-    orders_data = requests.get(orders_url).json()
-    rates_data = requests.get(rates_url).json()
+        orders_data = requests.get(orders_url).json()
+        rates_data = requests.get(rates_url).json()
 
-    df_orders = pd.DataFrame(orders_data if isinstance(orders_data, list) else orders_data.get("orders", []))
-    df_rates = pd.DataFrame(rates_data if isinstance(rates_data, list) else rates_data.get("rates", []))
+        # Handle different possible JSON payload structures safely
+        if isinstance(orders_data, list):
+            df_orders = pd.DataFrame(orders_data)
+        elif isinstance(orders_data, dict):
+            # Look for common key names or extract the first list found
+            key = next((k for k, v in orders_data.items() if isinstance(v, list)), None)
+            df_orders = pd.DataFrame(orders_data[key] if key else [])
+        else:
+            df_orders = pd.DataFrame()
 
-    # Apply Rule: latest updated_at per order_id is current
-    if "order_id" in df_orders.columns and "updated_at" in df_orders.columns:
-        df_orders["updated_at"] = pd.to_datetime(df_orders["updated_at"])
-        df_orders = df_orders.sort_values("updated_at").drop_duplicates(subset=["order_id"], keep="last")
+        if isinstance(rates_data, list):
+            df_rates = pd.DataFrame(rates_data)
+        elif isinstance(rates_data, dict):
+            key = next((k for k, v in rates_data.items() if isinstance(v, list)), None)
+            df_rates = pd.DataFrame(rates_data[key] if key else [])
+        else:
+            df_rates = pd.DataFrame()
 
-    conn = sqlite3.connect(":memory:", check_same_thread=False)
-    df_orders.to_sql("orders", conn, index=False, if_exists="replace")
-    df_rates.to_sql("rates", conn, index=False, if_exists="replace")
-    return conn
+        # Sanitize column names for SQLite compatibility (replace spaces/special chars)
+        df_orders.columns = [str(c).strip().replace(" ", "_").replace("-", "_").replace(".", "_") for c in df_orders.columns]
+        df_rates.columns = [str(c).strip().replace(" ", "_").replace("-", "_").replace(".", "_") for c in df_rates.columns]
+
+        # Apply Rule: latest updated_at per order_id is current
+        if "order_id" in df_orders.columns and "updated_at" in df_orders.columns:
+            df_orders["updated_at"] = pd.to_datetime(df_orders["updated_at"], errors="coerce")
+            df_orders = df_orders.sort_values("updated_at").drop_duplicates(subset=["order_id"], keep="last")
+
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        df_orders.to_sql("orders", conn, index=False, if_exists="replace")
+        df_rates.to_sql("rates", conn, index=False, if_exists="replace")
+        return conn
+    except Exception as e:
+        print(f"Error loading data into DB: {e}")
+        raise e
 
 db_conn = load_data_into_db()
 
@@ -67,7 +90,7 @@ Question: {req.question}
 Return ONLY the final answer value or text (e.g., number, product name, string). Do not include extra conversational filler.
 """
         response = client.chat.completions.create(
-            model="gpt-4o-mini", # or a supported model on aipipe like openai/gpt-4.1-nano or gpt-4o-mini
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
