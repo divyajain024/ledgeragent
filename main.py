@@ -11,9 +11,14 @@ app = FastAPI()
 
 API_BASE = "https://exam.sanand.workers.dev/questionData?email=22f2000901%40ds.study.iitm.ac.in&quizSign=SDjaPcG3ZnarUrzUDzCzJewltMiS718GRDkDguC8476R7LgQjmNnDH3W2JvPzsUl0%2F812fT7dWWAGZR6tXQX9coerwL7yWUbwiUQuanxaz%2F3SHgNnAF4XonVA%2FE5xOyTuOtfOAdgxdppPXLuTLIzRI7k1Kh8o4s6Ss5yYY0wOgaDlw%2BqZH0bTZ3QUohERul61kO%2FNZnEwV901dE1fMWdfPwunG1goBzBlZuhUsR8Q%2B%2FF1aqJNKsPGHF2C0h7GimDYnT28iNawW0oOMcqcebWXUXD5f3dP8KEMW5BieJR%2BCLQRZ49FfuKHVmCy0S5ccAScSjWBWHPIlCBpFBqBfJsEw%3D%3D&questionId=q-ledger-agent-server"
 
+# Ensure base_url has proper protocol fallback
+base_url = os.environ.get("OPENAI_BASE_URL", "https://aipipe.org/openai/v1")
+if not base_url.startswith("http://") and not base_url.startswith("https://"):
+    base_url = "https://" + base_url
+
 client = OpenAI(
     api_key=os.environ.get("OPENAI_API_KEY"),
-    base_url=os.environ.get("OPENAI_BASE_URL", "https://aipipe.org/openai/v1")
+    base_url=base_url
 )
 
 def load_data_into_db():
@@ -136,7 +141,7 @@ Question: {req.question}
 Task: Write a single, valid SQLite SQL query that answers this question. 
 Return ONLY the SQL query inside a markdown code block (e.g. ```sql ... ```). No other text or explanation.
 """
-        model_name = os.environ.get("OPENAI_MODEL", "openai/gpt-4o-mini")
+        model_name = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         response = client.chat.completions.create(
             model=model_name,
             messages=[{"role": "user", "content": prompt}],
